@@ -6,8 +6,14 @@
     - name: Ping the containers to verify connection
       ansible.builtin.ping:
 
+    - name: Wait for background systemd apt-daily locks to release
+      ansible.builtin.raw: "while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done;"
+      changed_when: false
+
     - name: Ensure a basic package (htop) is installed
       ansible.builtin.apt:
         name: htop
         state: present
         update_cache: true
+        # Do not re-update the cache if it was already updated within the last hour
+        cache_valid_time: 3600
