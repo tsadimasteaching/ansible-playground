@@ -1,0 +1,13 @@
+---
+- name: Sample Playbook for Docker VMs
+  hosts: cluster
+  become: true
+  tasks:
+    - name: Ping the containers to verify connection
+      ansible.builtin.ping:
+
+    - name: Ensure a basic package (htop) is installed
+      ansible.builtin.apt:
+        name: htop
+        state: present
+        update_cache: true

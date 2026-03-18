@@ -1,0 +1,15 @@
+# Vagrant
+.vagrant/
+
+# Ansible
+*.retry
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+
+# IDEs / Editors
+.vscode/
+.idea/
+*.swp

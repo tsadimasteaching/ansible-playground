@@ -1,0 +1,42 @@
+version: '3.8'
+
+# Define a reusable configuration anchor to keep the file DRY
+x-common-config: &common-config
+  image: geerlingguy/docker-ubuntu2404-ansible:latest
+  privileged: true
+  volumes:
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+  cgroup: host
+  networks:
+    ansible_net:
+
+services:
+  app-vm:
+    <<: *common-config
+    container_name: app-vm
+    hostname: app-vm
+    networks:
+      ansible_net:
+        ipv4_address: 192.168.56.10
+
+  db-vm:
+    <<: *common-config
+    container_name: db-vm
+    hostname: db-vm
+    networks:
+      ansible_net:
+        ipv4_address: 192.168.56.11
+
+  lb-vm:
+    <<: *common-config
+    container_name: lb-vm
+    hostname: lb-vm
+    networks:
+      ansible_net:
+        ipv4_address: 192.168.56.12
+
+networks:
+  ansible_net:
+    ipam:
+      config:
+        - subnet: 192.168.56.0/24
