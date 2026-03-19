@@ -1,0 +1,28 @@
+Vagrant.configure("2") do |config|
+  # Using the Bento project box for Ubuntu 24.04 LTS
+  config.vm.box = "bento/ubuntu-24.04"
+
+  # Allocate specific CPU and RAM resources for all VMs
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 512
+    vb.cpus = 1
+  end
+
+  # App Node
+  config.vm.define "app-vm" do |app|
+    app.vm.hostname = "app-vm"
+    app.vm.network "private_network", ip: "192.168.56.10"
+  end
+
+  # Database Node
+  config.vm.define "db-vm" do |db|
+    db.vm.hostname = "db-vm"
+    db.vm.network "private_network", ip: "192.168.56.11"
+  end
+
+  # Load Balancer Node
+  config.vm.define "lb-vm" do |lb|
+    lb.vm.hostname = "lb-vm"
+    lb.vm.network "private_network", ip: "192.168.56.12"
+  end
+end
