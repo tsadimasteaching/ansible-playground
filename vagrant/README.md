@@ -5,8 +5,18 @@ This directory contains the Vagrant configuration to spin up a local cluster of 
 ## Prerequisites
 
 Before you begin, ensure you have the following installed on your host machine:
-1. VirtualBox
-2. Vagrant
+
+### 1. VirtualBox
+VirtualBox is the hypervisor that will run our virtual machines.
+- **Download**: [VirtualBox Downloads](https://www.virtualbox.org/wiki/Downloads)
+- **Ubuntu/Debian**: `sudo apt update && sudo apt install virtualbox`
+- **macOS (Homebrew)**: `brew install --cask virtualbox`
+
+### 2. Vagrant
+Vagrant automates the creation and configuration of the virtual machines.
+- **Download**: Vagrant Downloads
+- **Ubuntu/Debian**: Follow the official HashiCorp guide on the download page to add their apt repository, then `sudo apt install vagrant`.
+- **macOS (Homebrew)**: `brew install hashicorp/tap/vagrant`
 
 ## Basic Commands
 
