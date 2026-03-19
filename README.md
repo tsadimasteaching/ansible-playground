@@ -1,23 +1,32 @@
 # Ansible Playground
 
-This project provides a local testing environment to learn and practice Ansible. It spins up three Ubuntu 24.04 nodes (`app-vm`, `db-vm`, `lb-vm`) using Docker Compose, simulating a standard multi-node cluster.
+This project provides a local testing environment to learn and practice Ansible. It spins up three Ubuntu 24.04 nodes (`app-vm`, `db-vm`, `lb-vm`), simulating a standard multi-node cluster.
 
-By using Docker instead of full Virtual Machines, the environment is incredibly fast to start up, lightweight on system resources, and bypasses hypervisor issues.
+You can choose to run this environment in two ways:
+1. **Docker Compose**: Incredibly fast to start up, lightweight on system resources, and bypasses hypervisor issues.
+2. **Vagrant & VirtualBox**: Uses full Virtual Machines for a more realistic emulation of isolated hosts.
 
 ## Prerequisites
 
 To run this project on your local machine, you will need to install the following tools:
 
-1. **Docker**: To run the simulated VMs.
-2. **Docker Compose**: To orchestrate the 3-node cluster.
-3. **Ansible**: Yes, Ansible **must be installed** on your local machine (host), as it will be executing the playbooks and connecting to the Docker containers via the local Docker daemon.
+### General Requirements
+- **Ansible**: Must be installed on your local machine (host), as it will be executing the playbooks.
 
 *(Note: If you are on Ubuntu/Debian, you can install Ansible with `sudo apt install ansible`)*
 
-## How to Run
+### For Docker Environment
+- **Docker**
+- **Docker Compose**
 
-### 1. Start the Cluster
-Bring up the simulated virtual machines in the background using Docker Compose:
+### For Vagrant Environment
+- **Vagrant**
+- **VirtualBox**
+
+## Option 1: Using Docker (Default)
+
+### 1. Start the Docker Cluster
+Bring up the simulated virtual machines in the background:
 
 ```bash
 docker compose up -d
