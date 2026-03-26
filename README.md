@@ -1,6 +1,6 @@
 # Ansible Playground
 
-This project provides a local testing environment to learn and practice Ansible. It spins up three Ubuntu 24.04 nodes (`app-vm`, `db-vm`, `lb-vm`), simulating a standard multi-node cluster.
+This project provides a local testing environment to learn and practice Ansible. It spins up three Ubuntu nodes (`app-vm`, `db-vm`, `lb-vm`), simulating a standard multi-node cluster.
 
 You can choose to run this environment in two ways:
 1. **Docker Compose**: Incredibly fast to start up, lightweight on system resources, and bypasses hypervisor issues.
@@ -22,6 +22,8 @@ To run this project on your local machine, you will need to install the followin
 ### For Vagrant Environment
 - **Vagrant**
 - **VirtualBox**
+
+---
 
 ## Option 1: Using Docker (Default)
 
@@ -56,12 +58,111 @@ When you are finished practicing, you can destroy the environment cleanly:
 docker compose down
 ```
 
+---
+
 ## Alternative: Vagrant
 
-If you prefer using full Virtual Machines instead of Docker, a `Vagrantfile.rb` is also included in this repository.
+If you prefer using full Virtual Machines instead of Docker, a `Vagrantfile` is also included in this repository.
 
 - Start VMs: `vagrant up`
 - Destroy VMs: `vagrant destroy -f`
+
+---
+
+## Playbooks
+
+| Playbook | Target group | What it does |
+|---|---|---|
+| `playbooks/postgres.yaml` | `dbservers` | Installs PostgreSQL, configures remote access, creates DB user and database |
+| `playbooks/fastapi.yaml` | `appservers` | Deploys the FastAPI backend from the monorepo, sets up virtualenv, runs DB migrations, starts uvicorn |
+| `playbooks/vue.yaml` | `appservers` | Deploys the Vue.js frontend, builds with npm, serves via nginx |
+| `playbooks/check-ssh.yaml` | `appservers` | Verifies SSH access to GitHub using agent forwarding |
+
+### Running a playbook
+
+```bash
+ansible-playbook playbooks/fastapi.yaml
+```
+
+### Enabling optional nginx for FastAPI
+
+The FastAPI playbook skips nginx installation by default (Vue handles the reverse proxy). To enable it:
+
+```bash
+ansible-playbook playbooks/fastapi.yaml -e install_nginx=true
+```
+
+Or set it permanently in `group_vars/appservers.yaml`:
+
+```yaml
+install_nginx: true
+```
+
+---
+
+## group_vars Reference
+
+Variables are split across three files:
+
+### `group_vars/all.yaml` — shared across every host
+
+```yaml
+app_server_host: "192.168.56.10"   # public IP of the app server (used by Vue browser JS)
+
+db:
+  host: "192.168.56.11"            # db-vm IP
+  port: "5432"
+  user: "dbuser"
+  password: "dbpassword"
+  name: "appdb"
+```
+
+### `group_vars/appservers.yaml` — app-vm only
+
+```yaml
+app_port: 8000                     # uvicorn listen port
+install_nginx: false               # set true to install nginx in fastapi.yaml
+
+git_repo_url: "https://github.com/tsadimasteaching/cloud-platforms-fastapi-vue.git"
+git_repo_branch: "main"
+git_clone_tmp_dir: "/tmp/repo"
+git_sparse_checkout_path: "services/backend"   # backend subdir in the monorepo
+
+tortoise_orm_config: "src.database.config.TORTOISE_ORM"
+
+backend_server_url: "http://127.0.0.1:{{ app_port }}"  # used by nginx proxy_pass (same machine)
+
+vue_sparse_checkout_path: "services/frontend"  # frontend subdir in the monorepo
+vue_site_location: "/var/www/vue"
+node_version: "20.12.1"
+```
+
+### `group_vars/dbservers.yaml` — db-vm only
+
+```yaml
+postgresql_version_map:
+  "20.04": "12"
+  "22.04": "14"
+  "24.04": "16"
+```
+
+PostgreSQL version is resolved automatically from this map at runtime based on `ansible_facts['distribution_version']`.
+
+### How group_vars are loaded
+
+A host only gets the variables from **its own group(s)**. Cross-group references do not work.
+
+```
+app-vm  → loads group_vars/all.yaml         ✓
+        → loads group_vars/appservers.yaml  ✓
+        → does NOT load group_vars/dbservers.yaml  ✗
+
+db-vm   → loads group_vars/all.yaml         ✓
+        → loads group_vars/dbservers.yaml   ✓
+        → does NOT load group_vars/appservers.yaml  ✗
+```
+
+Variables needed by multiple groups (e.g. `db.*` credentials used by both the app and DB server) belong in `group_vars/all.yaml`.
 
 ---
 
@@ -119,61 +220,37 @@ ansible-playbook playbooks/check-ssh.yaml
 
 ---
 
-## How group_vars Work
-
-The `group_vars/` directory contains one YAML file per inventory group. Ansible automatically loads and **merges** all group_vars files that apply to a host before running any play.
-
-```
-group_vars/
-├── all.yaml          # loaded for every host
-├── appservers.yaml   # loaded for app-vm only
-├── dbservers.yaml    # loaded for db-vm only
-└── lbservers.yaml    # loaded for lb-vm only
-```
-
-A host only gets the variables from **its own group(s)**. Cross-group references do not work — if `app-vm` is only in `appservers`, it will never see variables defined in `group_vars/dbservers.yaml`.
-
-```
-app-vm  → loads group_vars/all.yaml         ✓
-        → loads group_vars/appservers.yaml  ✓
-        → does NOT load group_vars/dbservers.yaml  ✗
-```
-
-Variables that need to be visible across multiple groups (e.g. database credentials used by both the app server and the DB server) belong in `group_vars/all.yaml`.
-
----
-
 ## Sparse Checkout for Monorepos
 
-The `playbooks/fastapi.yaml` playbook deploys only the `services/backend` subdirectory from a monorepo that also contains a frontend and other components. **Sparse checkout** tells Git to only populate the working tree with a specific path, avoiding the cost of checking out the entire repository.
+Both `fastapi.yaml` and `vue.yaml` deploy only a subdirectory from a monorepo. **Sparse checkout** tells Git to only populate the working tree with a specific path, avoiding the cost of checking out the entire repository.
 
 ```
 cloud-platforms-fastapi-vue/   ← full repo
 ├── services/
-│   ├── backend/               ← only this is needed on the app server
-│   └── frontend/              ← skipped
+│   ├── backend/               ← fastapi.yaml deploys this
+│   └── frontend/              ← vue.yaml deploys this
 └── ...
 ```
 
-The playbook performs this in four steps:
+The playbooks perform this in four steps:
 
 ```bash
-# 1. Clone the repo (index + objects, no working tree files yet for sparse paths)
+# 1. Clone the repo
 git clone <repo> /tmp/repo
 
 # 2. Enable cone-mode sparse checkout
 git sparse-checkout init --cone
 
 # 3. Declare which path to materialise
-git sparse-checkout set services/backend
+git sparse-checkout set services/backend   # or services/frontend
 
 # 4. Populate the working tree
 git checkout main
 ```
 
-After checkout, only `services/backend/` exists on disk. The playbook then moves it to the final destination and deletes the temporary clone.
+After checkout, only the declared subdirectory exists on disk. The playbook moves it to the final destination and deletes the temporary clone.
 
-The path to sparse-checkout is controlled by `git_sparse_checkout_path` in `group_vars/appservers.yaml`, so it can be changed without touching the playbook.
+The paths are controlled by `git_sparse_checkout_path` and `vue_sparse_checkout_path` in `group_vars/appservers.yaml`.
 
 ### Step 2 in detail — `git sparse-checkout init --cone`
 

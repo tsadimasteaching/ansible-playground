@@ -8,7 +8,22 @@ git_clone_tmp_dir: "/tmp/repo"
 git_sparse_checkout_path: "services/backend"
 
 app_port: 8000
+install_nginx: false  # set to true to install and configure nginx in fastapi.yaml
 tortoise_orm_config: "src.database.config.TORTOISE_ORM"
+
+# Vue.js frontend
+vue_app_dir: "{{ user_dir }}/vue"
+vue_site_location: "/var/www/vue"
+vue_sparse_checkout_path: "services/frontend"
+node_version: "20.12.1"
+# Used by nginx proxy_pass — localhost because nginx and uvicorn run on the same machine
+backend_server_url: "http://127.0.0.1:{{ app_port }}"
+
+# Environment variables written to Vue app's .env file.
+# VITE_API_URL must use the public IP — this URL is embedded in the JS bundle
+# and resolved by the browser, not the server.
+vueapp:
+  VUE_APP_API_URL: "http://{{ app_server_host }}"
 
 # Variables used by files/uvicorn.service.j2
 service:

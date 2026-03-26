@@ -1,0 +1,160 @@
+---
+- hosts: appservers
+
+  pre_tasks:
+
+    - name: find public IP
+      uri:
+        url: http://ifconfig.me/ip
+        return_content: yes
+      register: ip_response
+
+    - name: show public IP
+      debug:
+        var: ip_response.content
+
+    - name: install nginx
+      package:
+        name: nginx
+        state: latest
+      become: yes
+
+    - name: install nvm
+      shell: |
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+      args:
+        executable: /bin/bash
+        chdir: "$HOME"
+        creates: "$HOME/.nvm/nvm.sh"
+
+    - name: add nvm to .profile
+      ansible.builtin.lineinfile:
+        path: ~/.profile
+        line: source ~/.nvm/nvm.sh
+        create: yes
+
+    - name: show PATH
+      ansible.builtin.debug:
+        msg: "PATH : {{ ansible_facts['env']['PATH'] }}"
+
+    - name: install node {{ node_version }}
+      shell: |
+        source $HOME/.nvm/nvm.sh && nvm install {{ node_version }}
+      args:
+        executable: /bin/bash
+        chdir: "$HOME"
+        creates: "$HOME/.nvm/versions/node/v{{ node_version }}"
+
+    - name: install git
+      package:
+        name: git
+        state: latest
+      become: yes
+
+  tasks:
+
+  - name: add github.com to known hosts
+    lineinfile:
+      dest: "{{ user_dir }}/.ssh/known_hosts"
+      create: yes
+      state: present
+      line: "{{ lookup('pipe', 'ssh-keyscan -t rsa github.com') }}"
+      regexp: "^github\\.com"
+
+  - name: clone repository
+    git:
+      repo: "{{ git_repo_url }}"
+      dest: "{{ git_clone_tmp_dir }}"
+      bare: no
+      clone: yes
+      update: yes
+      force: yes
+
+  - name: enable sparse checkout
+    command: git sparse-checkout init --cone
+    args:
+      chdir: "{{ git_clone_tmp_dir }}"
+
+  - name: set sparse checkout path to frontend service
+    command: git sparse-checkout set {{ vue_sparse_checkout_path }}
+    args:
+      chdir: "{{ git_clone_tmp_dir }}"
+
+  - name: checkout {{ git_repo_branch }} branch
+    command: git checkout {{ git_repo_branch }}
+    args:
+      chdir: "{{ git_clone_tmp_dir }}"
+
+  - name: remove existing vue app directory
+    file:
+      path: "{{ vue_app_dir }}"
+      state: absent
+
+  - name: move frontend service to app directory
+    command: mv {{ git_clone_tmp_dir }}/{{ vue_sparse_checkout_path }} "{{ vue_app_dir }}"
+
+  - name: remove temporary clone
+    file:
+      path: "{{ git_clone_tmp_dir }}"
+      state: absent
+
+  - name: copy .env.example to .env
+    shell: "cp {{ vue_app_dir }}/.env.example {{ vue_app_dir }}/.env"
+
+  - name: populate .env with app settings
+    lineinfile:
+      dest: "{{ vue_app_dir }}/.env"
+      state: present
+      regexp: "^{{ item.key }}="
+      line: "{{ item.key }}={{ item.value }}"
+    with_items:
+      - "{{ vueapp | dict2items }}"
+
+  - name: install node dependencies
+    shell: |
+      export PATH=$PATH:~/.nvm/versions/node/v{{ node_version }}/bin; npm install
+    args:
+      chdir: "{{ vue_app_dir }}"
+
+  - name: build vue.js application
+    shell: |
+      export PATH=$PATH:~/.nvm/versions/node/v{{ node_version }}/bin; npm run build
+    args:
+      chdir: "{{ vue_app_dir }}"
+
+  - name: copy dist to nginx serving directory
+    copy:
+      src: "{{ vue_app_dir }}/dist/"
+      dest: "{{ vue_site_location }}"
+      remote_src: true
+      mode: "0755"
+      force: true
+    notify: restart nginx
+    become: yes
+
+  - name: deploy nginx virtual host config
+    template:
+      src: ../files/nginx/nginx.vue.j2
+      dest: "/etc/nginx/sites-available/vue"
+    become: yes
+
+  - name: enable vue virtual host
+    file:
+      src: "/etc/nginx/sites-available/vue"
+      dest: "/etc/nginx/sites-enabled/vue"
+      state: link
+    become: yes
+
+  - name: disable default nginx site
+    file:
+      path: /etc/nginx/sites-enabled/default
+      state: absent
+    become: yes
+    notify: restart nginx
+
+  handlers:
+    - name: restart nginx
+      service:
+        name: nginx
+        state: restarted
+      become: yes

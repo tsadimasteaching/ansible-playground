@@ -2,6 +2,8 @@
 # Shared variables loaded for every host in the inventory.
 # Place here anything that needs to be visible across multiple groups.
 
+app_server_host: "192.168.56.10"
+
 db:
   host: "192.168.56.11"
   port: "5432"
