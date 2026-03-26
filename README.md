@@ -77,6 +77,8 @@ If you prefer using full Virtual Machines instead of Docker, a `Vagrantfile` is 
 | `playbooks/fastapi.yaml` | `appservers` | Deploys the FastAPI backend from the monorepo, sets up virtualenv, runs DB migrations, starts uvicorn |
 | `playbooks/vue.yaml` | `appservers` | Deploys the Vue.js frontend, builds with npm, serves via nginx |
 | `playbooks/check-ssh.yaml` | `appservers` | Verifies SSH access to GitHub using agent forwarding |
+| `playbooks/docker-install.yaml` | `all` | Installs Docker Engine and plugins using the official apt repository; uses the modern `/etc/apt/keyrings/` GPG approach (Ubuntu 20.04–24.04) and detects architecture automatically |
+| `playbooks/docker-compose-run.yaml` | `appservers` | Installs Docker (via `docker-install.yaml`), adds the user to the docker group, clones the repo, and runs the application with Docker Compose; relies on `git_repo_url`, `git_repo_branch`, and `app_dir` from `group_vars/appservers.yaml` |
 
 ### Running a playbook
 
