@@ -116,3 +116,95 @@ ansible-playbook playbooks/check-ssh.yaml
 | `Permission denied (publickey)` | Key not in ssh-agent | `ssh-add ~/.ssh/id_ed25519` |
 | `ssh-add -l` returns nothing | ssh-agent not running | `eval $(ssh-agent) && ssh-add` |
 | Works locally but fails in playbook | Agent started after Ansible session | Restart terminal, re-add key, re-run |
+
+---
+
+## How group_vars Work
+
+The `group_vars/` directory contains one YAML file per inventory group. Ansible automatically loads and **merges** all group_vars files that apply to a host before running any play.
+
+```
+group_vars/
+├── all.yaml          # loaded for every host
+├── appservers.yaml   # loaded for app-vm only
+├── dbservers.yaml    # loaded for db-vm only
+└── lbservers.yaml    # loaded for lb-vm only
+```
+
+A host only gets the variables from **its own group(s)**. Cross-group references do not work — if `app-vm` is only in `appservers`, it will never see variables defined in `group_vars/dbservers.yaml`.
+
+```
+app-vm  → loads group_vars/all.yaml         ✓
+        → loads group_vars/appservers.yaml  ✓
+        → does NOT load group_vars/dbservers.yaml  ✗
+```
+
+Variables that need to be visible across multiple groups (e.g. database credentials used by both the app server and the DB server) belong in `group_vars/all.yaml`.
+
+---
+
+## Sparse Checkout for Monorepos
+
+The `playbooks/fastapi.yaml` playbook deploys only the `services/backend` subdirectory from a monorepo that also contains a frontend and other components. **Sparse checkout** tells Git to only populate the working tree with a specific path, avoiding the cost of checking out the entire repository.
+
+```
+cloud-platforms-fastapi-vue/   ← full repo
+├── services/
+│   ├── backend/               ← only this is needed on the app server
+│   └── frontend/              ← skipped
+└── ...
+```
+
+The playbook performs this in four steps:
+
+```bash
+# 1. Clone the repo (index + objects, no working tree files yet for sparse paths)
+git clone <repo> /tmp/repo
+
+# 2. Enable cone-mode sparse checkout
+git sparse-checkout init --cone
+
+# 3. Declare which path to materialise
+git sparse-checkout set services/backend
+
+# 4. Populate the working tree
+git checkout main
+```
+
+After checkout, only `services/backend/` exists on disk. The playbook then moves it to the final destination and deletes the temporary clone.
+
+The path to sparse-checkout is controlled by `git_sparse_checkout_path` in `group_vars/appservers.yaml`, so it can be changed without touching the playbook.
+
+### Step 2 in detail — `git sparse-checkout init --cone`
+
+Sparse checkout has two modes. Without `--cone` (the old mode), Git matches paths using `.gitignore`-style patterns — flexible but slow, because Git must compare every file in the index against every pattern on every operation.
+
+`--cone` is a stricter, faster mode that only allows **directories** as targets. It works with a simple rule set:
+
+- everything at the repo root is included (README, config files, etc.)
+- everything inside the declared directories is included
+- everything else is excluded
+
+Because cone mode only deals with directory boundaries (not arbitrary glob patterns), Git can use a much faster prefix lookup rather than pattern-matching every file.
+
+### Step 3 in detail — `git sparse-checkout set services/backend`
+
+This declares exactly which directory to materialise in the working tree. Internally Git writes three rules:
+
+```
+/*                   ← include root-level files
+!/*/                 ← exclude all top-level directories...
+/services/backend/   ← ...except this one
+```
+
+So on disk after `git checkout` you get:
+
+```
+/tmp/repo/
+├── README.md          ← root files included (cone rule)
+└── services/
+    └── backend/       ← the declared directory, fully included
+                         services/frontend/ does NOT appear
+```
+
+`services/` itself is not fully checked out — only the specific subdirectory declared. Git never writes `services/frontend/` to disk at all, even though it exists in the repo history.

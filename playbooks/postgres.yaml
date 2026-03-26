@@ -18,8 +18,8 @@
 
       - name: set postgresql version from distribution
         set_fact:
-          postgresql_version: "{{ postgresql_version_map[ansible_distribution_version] }}"
-        when: ansible_distribution == 'Ubuntu'
+          postgresql_version: "{{ postgresql_version_map[ansible_facts['distribution_version']] }}"
+        when: ansible_facts['distribution'] == 'Ubuntu'
 
       - block:
 
@@ -43,7 +43,7 @@
           tags:
             - edit
 
-        when: ansible_distribution == 'Ubuntu'
+        when: ansible_facts['distribution'] == 'Ubuntu'
 
 
       - block:

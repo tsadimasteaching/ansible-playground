@@ -2,7 +2,7 @@
 - hosts: appservers
 
   vars:
-    user_dir: "{{ ansible_env.HOME }}"
+    user_dir: "{{ ansible_facts['env']['HOME'] }}"
 
   tasks:
 

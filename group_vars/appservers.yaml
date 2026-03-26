@@ -1,0 +1,27 @@
+---
+user_dir: "{{ ansible_facts['env']['HOME'] }}"
+app_dir: "{{ user_dir }}/fastapi"
+
+git_repo_url: "https://github.com/tsadimasteaching/cloud-platforms-fastapi-vue.git"
+git_repo_branch: "main"
+git_clone_tmp_dir: "/tmp/repo"
+git_sparse_checkout_path: "services/backend"
+
+app_port: 8000
+tortoise_orm_config: "src.database.config.TORTOISE_ORM"
+
+# Variables used by files/uvicorn.service.j2
+service:
+  workingdir: "{{ app_dir }}"
+  execstart: "{{ app_dir }}/favenv/bin/uvicorn src.main:app --host 0.0.0.0 --port {{ app_port }}"
+
+# Environment variables written to app's .env file (src/database/.env)
+# db.* comes from group_vars/all.yaml which is loaded for every host.
+app:
+  env:
+    DB_HOST: "{{ db.host }}"
+    DB_PORT: "{{ db.port }}"
+    DB_NAME: "{{ db.name }}"
+    DB_USER: "{{ db.user }}"
+    DB_PASSWORD: "{{ db.password }}"
+    DATABASE_URL: "postgres://{{ db.user }}:{{ db.password }}@{{ db.host }}:{{ db.port }}/{{ db.name }}"

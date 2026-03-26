@@ -1,0 +1,157 @@
+---
+- hosts: appservers
+
+  tasks:
+
+  - name: add github.com to known hosts
+    lineinfile:
+      dest: "{{user_dir}}/.ssh/known_hosts"
+      create: yes
+      state: present
+      line: "{{lookup('pipe', 'ssh-keyscan -t rsa github.com')}}"
+      regexp: "^github\\.com"
+
+  - name: clone repository
+    git:
+      repo: "{{ git_repo_url }}"
+      dest: "{{ git_clone_tmp_dir }}"
+      bare: no
+      clone: yes
+      update: yes
+      force: yes
+
+  - name: enable sparse checkout
+    command: git sparse-checkout init --cone
+    args:
+      chdir: "{{ git_clone_tmp_dir }}"
+
+  - name: set sparse checkout path to backend service
+    command: git sparse-checkout set {{ git_sparse_checkout_path }}
+    args:
+      chdir: "{{ git_clone_tmp_dir }}"
+
+  - name: checkout {{ git_repo_branch }} branch
+    command: git checkout {{ git_repo_branch }}
+    args:
+      chdir: "{{ git_clone_tmp_dir }}"
+
+  - name: remove existing app directory
+    file:
+      path: "{{ app_dir }}"
+      state: absent
+
+  - name: move backend service to app directory
+    command: mv {{ git_clone_tmp_dir }}/{{ git_sparse_checkout_path }} "{{ app_dir }}"
+
+  - name: remove temporary clone
+    file:
+      path: "{{ git_clone_tmp_dir }}"
+      state: absent
+
+  - name: copy .env.example to .env
+    shell: "cp {{app_dir}}/src/database/.env.example {{app_dir}}/src/database/.env"
+
+  - name: populate .env with database settings
+    lineinfile:
+      dest: "{{app_dir}}/src/database/.env"
+      state: present
+      regexp: "^{{item.key}}="
+      line: "{{item.key}}='{{item.value}}'"
+    with_items:
+      - "{{app.env | dict2items}}"
+
+  - name: install python system packages
+    apt:
+      name:
+        - python3
+        - python3-pip
+        - python3-virtualenv
+        - virtualenv
+        - libpq-dev
+      update_cache: yes
+    become: yes
+    become_user: root
+
+  - name: install python dependencies into virtualenv
+    pip:
+      requirements: "{{app_dir}}/requirements.txt"
+      virtualenv: "{{app_dir}}/favenv"
+      virtualenv_python: python3
+      state: forcereinstall
+
+  - name: deploy uvicorn systemd service
+    template:
+      src: ../files/uvicorn.service.j2
+      dest: "/etc/systemd/system/uvicorn.service"
+    become: yes
+    become_user: root
+    notify: restart uvicorn
+
+  - name: start and enable uvicorn service
+    service:
+      name: uvicorn
+      state: started
+      enabled: yes
+    become: yes
+
+  - name: install and configure nginx
+    block:
+
+    - name: install nginx
+      apt:
+        name: nginx
+        update_cache: yes
+
+    - name: deploy nginx virtual host config
+      template:
+        src: ../files/nginx/demo.nginx.j2
+        dest: "/etc/nginx/sites-available/fastapi"
+
+    - name: enable fastapi virtual host
+      file:
+        src: "/etc/nginx/sites-available/fastapi"
+        dest: "/etc/nginx/sites-enabled/fastapi"
+        state: link
+      notify: restart nginx
+
+    - name: disable default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: restart nginx
+
+    become: yes
+    become_user: root
+
+  - name: initialize aerich migrations config
+    ansible.builtin.command:
+      cmd: "{{ app_dir }}/favenv/bin/aerich init -t {{ tortoise_orm_config }}"
+    args:
+      chdir: "{{ app_dir }}"
+
+  - name: create database schema
+    ansible.builtin.command:
+      cmd: "{{ app_dir }}/favenv/bin/aerich init-db"
+    args:
+      chdir: "{{ app_dir }}"
+
+  - name: apply pending migrations
+    ansible.builtin.command:
+      cmd: "{{ app_dir }}/favenv/bin/aerich upgrade"
+    args:
+      chdir: "{{ app_dir }}"
+
+
+  handlers:
+
+  - name: restart nginx
+    service:
+      name: nginx
+      state: restarted
+    become: yes
+
+  - name: restart uvicorn
+    service:
+      name: uvicorn
+      state: restarted
+    become: yes
