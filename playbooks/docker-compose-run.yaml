@@ -1,0 +1,68 @@
+---
+- name: Install Docker first
+  import_playbook: docker-install.yaml
+
+- hosts: all
+  name: run docker compose
+
+
+  tasks:
+    - name: adding existing user to group docker
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: docker
+        append: yes
+      become: yes
+      
+    - name: Check if user is in docker group
+      command: id -nG {{ ansible_user_id }}
+      register: user_groups
+
+    - name: Debug current user
+      debug:
+        var: user_groups
+
+    - name: Fail if user is not in docker group
+      fail:
+        msg: "User {{ ansible_user_id }} is not in the docker group. Re-run the playbook or log out and back in."
+      when: "'docker' not in user_groups.stdout.split()"
+
+    - name: ensure github.com is a known host
+      lineinfile:
+        dest: "{{ansible_env.HOME}}/.ssh/known_hosts"
+        create: yes
+        state: present
+        line: "{{lookup('pipe', 'ssh-keyscan -t ed25519 github.com')}}"
+        regexp: "^github\\.com"
+
+    - name: "Clone the repository"
+      git:
+        repo: "{{ git_repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "{{ git_repo_branch }}"
+        force: yes
+
+    # - name: "Tear down existing services"
+    #   community.docker.docker_compose_v2:
+    #     project_src: "{{ app_dir }}"
+    #     state: absent
+
+    - name: Create and start services
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        build: always
+        state: present
+      register: output
+      notify: Restart Docker Compose
+      become: true
+
+    - debug:
+        var: output
+
+  handlers:
+
+  - name: Restart Docker Compose
+    community.docker.docker_compose_v2:
+      project_src: "{{ app_dir }}"
+      restarted: true
+    become: true
