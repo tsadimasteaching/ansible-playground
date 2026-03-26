@@ -1,0 +1,24 @@
+---
+- hosts: appservers
+
+  vars:
+    user_dir: "{{ ansible_env.HOME }}"
+
+  tasks:
+
+    - name: ensure github.com is a known host
+      lineinfile:
+        dest: "{{ user_dir }}/.ssh/known_hosts"
+        create: yes
+        state: present
+        line: "{{ lookup('pipe', 'ssh-keyscan -t rsa github.com') }}"
+        regexp: "^github\\.com"
+
+    - name: check SSH access to GitHub
+      command: ssh -T git@github.com
+      register: ssh_result
+      failed_when: ssh_result.rc not in [0, 1]
+
+    - name: show GitHub SSH auth result
+      debug:
+        msg: "{{ ssh_result.stderr }}"

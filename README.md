@@ -58,7 +58,61 @@ docker compose down
 
 ## Alternative: Vagrant
 
-If you prefer using full Virtual Machines instead of Docker, a `Vagrantfile.rb` is also included in this repository. 
+If you prefer using full Virtual Machines instead of Docker, a `Vagrantfile.rb` is also included in this repository.
 
 - Start VMs: `vagrant up`
 - Destroy VMs: `vagrant destroy -f`
+
+---
+
+## GitHub SSH Access from Playbooks
+
+Some playbooks (e.g., `playbooks/check-ssh.yaml`) need to authenticate to GitHub via SSH from the remote VMs. This is handled through **SSH Agent Forwarding** — the VMs do not need a GitHub key themselves; your local key is forwarded through the Ansible SSH connection.
+
+### How it works
+
+```
+your machine                 remote VM
+┌─────────────────┐          ┌──────────────────────┐
+│  ~/.ssh/id_rsa  │          │  no GitHub key needed │
+│  ssh-agent      │◄────────►│  ssh -T git@github.com│
+└─────────────────┘          └──────────────────────┘
+   ForwardAgent=yes (set in ansible.cfg)
+```
+
+`ansible.cfg` already enables this:
+
+```ini
+[ssh_connection]
+ssh_args = -o ForwardAgent=yes -o ControlMaster=auto -o ControlPersist=60s
+```
+
+### Steps
+
+**1. Add your GitHub SSH key to the local agent:**
+
+```bash
+ssh-add ~/.ssh/id_ed25519    # or id_rsa, whichever key GitHub knows
+ssh-add -l                   # verify it's loaded
+```
+
+**2. Verify the key works locally:**
+
+```bash
+ssh -T git@github.com
+# Expected: Hi <username>! You've successfully authenticated...
+```
+
+**3. Run the playbook:**
+
+```bash
+ansible-playbook playbooks/check-ssh.yaml
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Permission denied (publickey)` | Key not in ssh-agent | `ssh-add ~/.ssh/id_ed25519` |
+| `ssh-add -l` returns nothing | ssh-agent not running | `eval $(ssh-agent) && ssh-add` |
+| Works locally but fails in playbook | Agent started after Ansible session | Restart terminal, re-add key, re-run |
