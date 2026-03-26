@@ -1,0 +1,91 @@
+---
+  - name: install postgres
+    hosts: dbservers
+    become: yes
+    become_user: root
+
+    tasks:
+      - name: install postgres and pip packages
+        apt:
+          name:
+            - postgresql
+            - python3-pip
+            - python3-psycopg2
+          state: present
+          update_cache: yes
+        tags:
+          - install
+
+      - name: set postgresql version from distribution
+        set_fact:
+          postgresql_version: "{{ postgresql_version_map[ansible_distribution_version] }}"
+        when: ansible_distribution == 'Ubuntu'
+
+      - block:
+
+        - name: edit postgres.conf
+          lineinfile:
+            path: /etc/postgresql/{{ postgresql_version }}/main/postgresql.conf
+            regexp: '^#listen_addresses\s*='
+            line: "listen_addresses='*'"
+          notify:
+            - restart postgres
+          tags:
+            - edit
+
+        - name: edit pg_hba.conf
+          lineinfile:
+            path: /etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf
+            line: "host\tall\tall\t0.0.0.0/0\tmd5"
+            create: yes
+          notify:
+            - restart postgres
+          tags:
+            - edit
+
+        when: ansible_distribution == 'Ubuntu'
+
+
+      - block:
+        - name: create postgres user
+          postgresql_user:
+            name: "{{ db.user }}"
+            password: "{{ db.password }}"
+          become: yes
+          become_user: postgres
+
+        - name: create postgres database
+          postgresql_db:
+            name: "{{ db.name }}"
+            owner: "{{ db.user }}"
+          become: yes
+          become_user: postgres
+
+        rescue:
+        - name: apt install psycopg2-binary
+          apt:
+            name: python3-psycopg2
+            state: present
+          tags:
+            - install
+
+        always:
+          - name: create postgres user
+            postgresql_user:
+              name: "{{ db.user }}"
+              password: "{{ db.password }}"
+            become: yes
+            become_user: postgres
+
+          - name: create postgres database
+            postgresql_db:
+              name: "{{ db.name }}"
+              owner: "{{ db.user }}"
+            become: yes
+            become_user: postgres
+
+    handlers:
+      - name: restart postgres
+        service:
+          name: postgresql
+          state: restarted

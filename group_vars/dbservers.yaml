@@ -1,0 +1,11 @@
+---
+db:
+  user: dbuser
+  password: dbpassword
+  name: appdb
+
+# Maps Ubuntu release version to the default PostgreSQL major version
+postgresql_version_map:
+  "20.04": "12"
+  "22.04": "14"
+  "24.04": "16"
